@@ -1,33 +1,29 @@
-# Object files
+.*.swp
 *.o
-*.ko
-*.obj
-*.elf
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
-*.su
+*.log
+dump.rdb
+redis-benchmark
+redis-check-aof
+redis-check-rdb
+redis-check-dump
+redis-cli
+redis-sentinel
+redis-server
+doc-tools
+release
+misc/*
+src/release.h
+appendonly.aof
+SHORT_TERM_TODO
+release.h
+src/transfer.sh
+src/configs
+redis.ds
+src/redis.conf
+src/nodes.conf
+deps/lua/src/lua
+deps/lua/src/luac
+deps/lua/src/liblua.a
+.make-*
+.prerequisites
+*.dSYM
