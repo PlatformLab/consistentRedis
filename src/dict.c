@@ -46,6 +46,7 @@
 #include "dict.h"
 #include "zmalloc.h"
 #include "redisassert.h"
+#include "server.h"
 
 /* Using dictEnableResize() / dictDisableResize() we make possible to
  * enable/disable resizing of the hash table as needed. This is very important
@@ -325,6 +326,7 @@ int dictAdd(dict *d, void *key, void *val)
 
     if (!entry) return DICT_ERR;
     dictSetVal(d, entry, val);
+    entry->lastModOpNum = server.currentOpNum;
     return DICT_OK;
 }
 
@@ -393,6 +395,7 @@ int dictReplace(dict *d, void *key, void *val)
     auxentry = *entry;
     dictSetVal(d, entry, val);
     dictFreeVal(d, &auxentry);
+    entry->lastModOpNum = server.currentOpNum;
     return 0;
 }
 

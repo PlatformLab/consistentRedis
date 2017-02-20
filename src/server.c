@@ -1460,6 +1460,7 @@ void initServerConfig(void) {
     server.hz = CONFIG_DEFAULT_HZ;
     server.runid[CONFIG_RUN_ID_SIZE] = '\0';
     server.arch_bits = (sizeof(long) == 8) ? 64 : 32;
+    server.currentOpNum = 0;
     server.port = CONFIG_DEFAULT_SERVER_PORT;
     server.tcp_backlog = CONFIG_DEFAULT_TCP_BACKLOG;
     server.bindaddr_count = 0;
@@ -1500,6 +1501,7 @@ void initServerConfig(void) {
     server.aof_flush_postponed_start = 0;
     server.aof_rewrite_incremental_fsync = CONFIG_DEFAULT_AOF_REWRITE_INCREMENTAL_FSYNC;
     server.aof_load_truncated = CONFIG_DEFAULT_AOF_LOAD_TRUNCATED;
+    server.aof_last_fsync_opNum = 0;
     server.pidfile = NULL;
     server.rdb_filename = zstrdup(CONFIG_DEFAULT_RDB_FILENAME);
     server.aof_filename = zstrdup(CONFIG_DEFAULT_AOF_FILENAME);
@@ -2266,6 +2268,7 @@ void call(client *c, int flags) {
             return;
         }
     }
+    ++server.currentOpNum;
     c->cmd->proc(c);
     duration = ustime()-start;
     dirty = server.dirty-dirty;

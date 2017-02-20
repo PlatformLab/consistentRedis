@@ -200,7 +200,7 @@ ssize_t aofRewriteBufferWrite(int fd) {
 /* Starts a background task that performs fsync() against the specified
  * file descriptor (the one of the AOF file) in another thread. */
 void aof_background_fsync(int fd) {
-    bioCreateBackgroundJob(BIO_AOF_FSYNC,(void*)(long)fd,NULL,NULL);
+    bioCreateBackgroundJob(BIO_AOF_FSYNC,(void*)(long)fd,NULL,server.currentOpNum);
 }
 
 /* Called when the user switches from "appendonly yes" to "appendonly no"
@@ -437,6 +437,7 @@ void flushAppendOnlyFile(int force) {
          * flushing metadata. */
         latencyStartMonitor(latency);
         aof_fsync(server.aof_fd); /* Let's try to get this data on the disk */
+        server.aof_last_fsync_opNum = server.currentOpNum;
         latencyEndMonitor(latency);
         latencyAddSampleIfNeeded("aof-fsync-always",latency);
         server.aof_last_fsync = server.unixtime;
@@ -1499,7 +1500,7 @@ void backgroundRewriteDoneHandler(int exitcode, int bysignal) {
             server.aof_state = AOF_ON;
 
         /* Asynchronously close the overwritten AOF. */
-        if (oldfd != -1) bioCreateBackgroundJob(BIO_CLOSE_FILE,(void*)(long)oldfd,NULL,NULL);
+        if (oldfd != -1) bioCreateBackgroundJob(BIO_CLOSE_FILE,(void*)(long)oldfd,NULL,0);
 
         serverLog(LL_VERBOSE,
             "Background AOF rewrite signal handler took %lldus", ustime()-now);

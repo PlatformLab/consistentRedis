@@ -79,7 +79,8 @@ struct bio_job {
     time_t time; /* Time at which the job was created. */
     /* Job specific arguments pointers. If we need to pass more than three
      * arguments we can just pass a pointer to a structure or alike. */
-    void *arg1, *arg2, *arg3;
+    void *arg1, *arg2;
+    long long arg3;
 };
 
 void *bioProcessBackgroundJobs(void *arg);
@@ -123,7 +124,7 @@ void bioInit(void) {
     }
 }
 
-void bioCreateBackgroundJob(int type, void *arg1, void *arg2, void *arg3) {
+void bioCreateBackgroundJob(int type, void *arg1, void *arg2, long long arg3) {
     struct bio_job *job = zmalloc(sizeof(*job));
 
     job->time = time(NULL);
@@ -183,6 +184,7 @@ void *bioProcessBackgroundJobs(void *arg) {
             close((long)job->arg1);
         } else if (type == BIO_AOF_FSYNC) {
             aof_fsync((long)job->arg1);
+            server.aof_last_fsync_opNum = job->arg3;
         } else {
             serverPanic("Wrong job type in bioProcessBackgroundJobs().");
         }

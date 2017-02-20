@@ -52,6 +52,7 @@ typedef struct dictEntry {
         int64_t s64;
         double d;
     } v;
+    long long lastModOpNum; /* Operation number that modified this entry */
     struct dictEntry *next;
 } dictEntry;
 
