@@ -32,6 +32,7 @@
 #include "slowlog.h"
 #include "bio.h"
 #include "latency.h"
+#include "rifl.h"
 
 #include <time.h>
 #include <signal.h>
@@ -124,7 +125,7 @@ struct redisServer server; /* server global state */
  */
 struct redisCommand redisCommandTable[] = {
     {"get",getCommand,2,"rF",0,NULL,1,1,1,0,0},
-    {"set",setCommand,-3,"wm",0,NULL,1,1,1,0,0},
+    {"set",setCommand,-5,"wmO",0,NULL,1,1,1,0,0},
     {"setnx",setnxCommand,3,"wmF",0,NULL,1,1,1,0,0},
     {"setex",setexCommand,4,"wm",0,NULL,1,1,1,0,0},
     {"psetex",psetexCommand,4,"wm",0,NULL,1,1,1,0,0},
@@ -1446,6 +1447,8 @@ void createSharedObjects(void) {
      * string in string comparisons for the ZRANGEBYLEX command. */
     shared.minstring = createStringObject("minstring",9);
     shared.maxstring = createStringObject("maxstring",9);
+    shared.riflDuplicate = createObject(OBJ_STRING,sdsnew("+OK (RIFL duplicate)\r\n"));
+    shared.riflClientIdCollision = createObject(OBJ_STRING,sdsnew("-ERR (RIFL clientId collision)\r\n"));
 }
 
 void initServerConfig(void) {
@@ -2027,6 +2030,7 @@ void populateCommandTable(void) {
             case 'M': c->flags |= CMD_SKIP_MONITOR; break;
             case 'k': c->flags |= CMD_ASKING; break;
             case 'F': c->flags |= CMD_FAST; break;
+            case 'O': c->flags |= CMD_AT_MOST_ONCE; break;
             default: serverPanic("Unsupported command flag"); break;
             }
             f++;
@@ -2249,6 +2253,19 @@ void call(client *c, int flags) {
     /* Call the command. */
     dirty = server.dirty;
     start = ustime();
+    // TODO(seojin): Add RIFL check.
+    if (c->cmd->flags & CMD_AT_MOST_ONCE) {
+        getLongLongFromObject(c->argv[c->argc-2], &c->clientId);
+        getLongLongFromObject(c->argv[c->argc-1], &c->requestId);
+        if (!riflCheckClientIdOk(c)) {
+            addReply(c, shared.riflClientIdCollision);
+            return;
+        }
+        if (riflCheckDuplicate(c->clientId, c->requestId)){
+            addReply(c, shared.riflDuplicate);
+            return;
+        }
+    }
     c->cmd->proc(c);
     duration = ustime()-start;
     dirty = server.dirty-dirty;
@@ -2752,6 +2769,7 @@ void addReplyCommand(client *c, struct redisCommand *cmd) {
         flagcount += addReplyCommandFlag(c,cmd,CMD_SKIP_MONITOR, "skip_monitor");
         flagcount += addReplyCommandFlag(c,cmd,CMD_ASKING, "asking");
         flagcount += addReplyCommandFlag(c,cmd,CMD_FAST, "fast");
+        flagcount += addReplyCommandFlag(c,cmd,CMD_AT_MOST_ONCE, "execute_at_most_once");
         if (cmd->getkeys_proc) {
             addReplyStatus(c, "movablekeys");
             flagcount += 1;

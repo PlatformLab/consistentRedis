@@ -187,6 +187,7 @@ typedef long long mstime_t; /* millisecond time type. */
 #define CMD_SKIP_MONITOR 2048         /* "M" flag */
 #define CMD_ASKING 4096               /* "k" flag */
 #define CMD_FAST 8192                 /* "F" flag */
+#define CMD_AT_MOST_ONCE 16384        /* "O" flag (safe to retry) */
 
 /* Object types */
 #define OBJ_STRING 0
@@ -609,6 +610,8 @@ typedef struct client {
     dict *pubsub_channels;  /* channels a client is interested in (SUBSCRIBE) */
     list *pubsub_patterns;  /* patterns a client is interested in (SUBSCRIBE) */
     sds peerid;             /* Cached peer ID. */
+    long long clientId;     /* RIFL client id. */
+    long long requestId;    /* RIFL request sequence number of current request.*/
 
     /* Response buffer */
     int bufpos;
@@ -629,6 +632,7 @@ struct sharedObjectsStruct {
     *busykeyerr, *oomerr, *plus, *messagebulk, *pmessagebulk, *subscribebulk,
     *unsubscribebulk, *psubscribebulk, *punsubscribebulk, *del, *rpop, *lpop,
     *lpush, *emptyscan, *minstring, *maxstring,
+    *riflDuplicate, *riflClientIdCollision,
     *select[PROTO_SHARED_SELECT_CMDS],
     *integers[OBJ_SHARED_INTEGERS],
     *mbulkhdr[OBJ_SHARED_BULKHDR_LEN], /* "*<value>\r\n" */

@@ -29,6 +29,7 @@
 
 #include "server.h"
 #include "bio.h"
+#include "rifl.h"
 #include "rio.h"
 
 #include <signal.h>
@@ -695,6 +696,14 @@ int loadAppendOnlyFile(char *filename) {
             exit(1);
         }
 
+        // TODO(seojin): RIFL here?
+        if (cmd->flags & CMD_AT_MOST_ONCE) {
+            long long clientId, requestId;
+            getLongLongFromObject(argv[argc-2], &clientId);
+            getLongLongFromObject(argv[argc-1], &requestId);
+            riflCheckDuplicate(clientId, requestId);
+        }
+
         /* Run the command in the context of a fake client */
         cmd->proc(fakeClient);
 
@@ -1069,11 +1078,13 @@ int rewriteAppendOnlyFile(char *filename) {
             /* Save the key and associated value */
             if (o->type == OBJ_STRING) {
                 /* Emit a SET command */
-                char cmd[]="*3\r\n$3\r\nSET\r\n";
+                char cmd[]="*5\r\n$3\r\nSET\r\n";
                 if (rioWrite(&aof,cmd,sizeof(cmd)-1) == 0) goto werr;
                 /* Key and value */
                 if (rioWriteBulkObject(&aof,&key) == 0) goto werr;
                 if (rioWriteBulkObject(&aof,o) == 0) goto werr;
+                char rifl[]="$1\r\n0\r\n$1\r\n0\r\n"; // fill dummy now.
+                if (rioWrite(&aof,rifl,sizeof(rifl)-1) == 0) goto werr;
             } else if (o->type == OBJ_LIST) {
                 if (rewriteListObject(&aof,&key,o) == 0) goto werr;
             } else if (o->type == OBJ_SET) {
@@ -1101,6 +1112,20 @@ int rewriteAppendOnlyFile(char *filename) {
         dictReleaseIterator(di);
         di = NULL;
     }
+
+    /* Now, sweep RIFL table and write SET log accordingly. */
+    // TODO(seojin): Make new command. RIFLCR clientId rpcId
+    long long clientId;
+    for (clientId = riflGetNext(-1); clientId != -1; clientId = riflGetNext(clientId)) {
+        long long requestId = riflGetprocessedRpcId(clientId);
+        /* Emit a SET command */
+        char cmd[]="*5\r\n$3\r\nSET\r\n$5\r\n_rifl\r\n$1\r\n0\r\n";
+        if (rioWrite(&aof,cmd,sizeof(cmd)-1) == 0) goto werr;
+        /* Key and value */
+        if (rioWriteBulkLongLong(&aof, clientId) == 0) goto werr;
+        if (rioWriteBulkLongLong(&aof, requestId) == 0) goto werr;
+    }
+
 
     /* Do an initial slow fsync here while the parent is still sending
      * data, in order to make the next final fsync faster. */

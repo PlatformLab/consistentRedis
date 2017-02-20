@@ -99,9 +99,10 @@ void setCommand(client *c) {
     int unit = UNIT_SECONDS;
     int flags = OBJ_SET_NO_FLAGS;
 
-    for (j = 3; j < c->argc; j++) {
+    // exclude last 3 RIFL arguments from original Redis argument parser.
+    for (j = 3; j < c->argc - 3; j++) {
         char *a = c->argv[j]->ptr;
-        robj *next = (j == c->argc-1) ? NULL : c->argv[j+1];
+        robj *next = (j == c->argc-1 - 3) ? NULL : c->argv[j+1];
 
         if ((a[0] == 'n' || a[0] == 'N') &&
             (a[1] == 'x' || a[1] == 'X') && a[2] == '\0' &&
