@@ -518,6 +518,9 @@ static int processItem(redisReader *r) {
             case '+':
                 cur->type = REDIS_REPLY_STATUS;
                 break;
+            case '@':
+                cur->type = REDIS_REPLY_STATUS;
+                break;
             case ':':
                 cur->type = REDIS_REPLY_INTEGER;
                 break;

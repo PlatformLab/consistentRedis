@@ -80,6 +80,7 @@ typedef long long mstime_t; /* millisecond time type. */
 #define CONFIG_MIN_HZ            1
 #define CONFIG_MAX_HZ            500
 #define CONFIG_DEFAULT_SERVER_PORT        6379    /* TCP port */
+#define CONFIG_DEFAULT_RECOVERY_PORT      6380    /* TCP port for recovery*/
 #define CONFIG_DEFAULT_TCP_BACKLOG       511     /* TCP listen backlog */
 #define CONFIG_DEFAULT_CLIENT_TIMEOUT       0       /* default client timeout: infinite */
 #define CONFIG_DEFAULT_DBNUM     16
@@ -439,6 +440,14 @@ typedef long long mstime_t; /* millisecond time type. */
 #define NOTIFY_EVICTED (1<<9)     /* e */
 #define NOTIFY_ALL (NOTIFY_GENERIC | NOTIFY_STRING | NOTIFY_LIST | NOTIFY_SET | NOTIFY_HASH | NOTIFY_ZSET | NOTIFY_EXPIRED | NOTIFY_EVICTED)      /* A */
 
+/* Server's opration state. */
+#define SERVER_STATE_ACCEPTING_REPLAY 1   /* Server only takes client's replay requests. */
+#define SERVER_STATE_NORMAL 2           /* Server takes normal request now. */
+
+#define SECONDS_WAITING_REPLAY 10       /* server waits extra seconds after last
+                                           client replay before swithing from
+                        SERVER_STATE_ACCEPTING_REPLAY to SERVER_STATE_NORMAL. */
+
 /* Get the first bind addr or NULL */
 #define NET_FIRST_BIND_ADDR (server.bindaddr_count ? server.bindaddr[0] : NULL)
 
@@ -613,7 +622,7 @@ typedef struct client {
     sds peerid;             /* Cached peer ID. */
     long long clientId;     /* RIFL client id. */
     long long requestId;    /* RIFL request sequence number of current request.*/
-
+    bool isRecovery;        /* Indicates this connection is for recovery. */
     /* Response buffer */
     int bufpos;
     char buf[PROTO_REPLY_CHUNK_BYTES];
@@ -633,7 +642,7 @@ struct sharedObjectsStruct {
     *busykeyerr, *oomerr, *plus, *messagebulk, *pmessagebulk, *subscribebulk,
     *unsubscribebulk, *psubscribebulk, *punsubscribebulk, *del, *rpop, *lpop,
     *lpush, *emptyscan, *minstring, *maxstring,
-    *riflDuplicate, *riflClientIdCollision,
+    *riflDuplicate, *riflClientIdCollision, *unsyncedOk,
     *select[PROTO_SHARED_SELECT_CMDS],
     *integers[OBJ_SHARED_INTEGERS],
     *mbulkhdr[OBJ_SHARED_BULKHDR_LEN], /* "*<value>\r\n" */
@@ -727,8 +736,11 @@ struct redisServer {
     char runid[CONFIG_RUN_ID_SIZE+1];  /* ID always different at every exec. */
     int sentinel_mode;          /* True if this instance is a Sentinel. */
     long long currentOpNum;     /* Operation number that we are working on. */
+    int serverState;            /* State of server (accepting recovery, normal).*/
+    time_t last_client_replay;  /* Unix time at which clients stopped sending replay */
     /* Networking */
     int port;                   /* TCP listening port */
+    int portForRecovery;        /* TCP listening port for client replay */
     int tcp_backlog;            /* TCP listen() backlog */
     char *bindaddr[CONFIG_BINDADDR_MAX]; /* Addresses we should bind to */
     int bindaddr_count;         /* Number of addresses in server.bindaddr[] */
@@ -736,6 +748,8 @@ struct redisServer {
     mode_t unixsocketperm;      /* UNIX socket permission */
     int ipfd[CONFIG_BINDADDR_MAX]; /* TCP socket file descriptors */
     int ipfd_count;             /* Used slots in ipfd[] */
+    int ipfd4replay[CONFIG_BINDADDR_MAX]; /* TCP socket file descriptors */
+    int ipfd4replay_count;             /* Used slots in ipfd[] */
     int sofd;                   /* Unix socket file descriptor */
     int cfd[CONFIG_BINDADDR_MAX];/* Cluster bus listening socket */
     int cfd_count;              /* Used slots in cfd[] */
@@ -1107,6 +1121,7 @@ void setDeferredMultiBulkLength(client *c, void *node, long length);
 void processInputBuffer(client *c);
 void acceptHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
+void acceptTcpHandler4replay(aeEventLoop *el, int fd, void *privdata, int mask);
 void acceptUnixHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
 void addReplyBulk(client *c, robj *obj);

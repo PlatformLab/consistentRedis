@@ -1289,6 +1289,18 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
         migrateCloseTimedoutSockets();
     }
 
+    run_with_period(1000) {
+        /* If server haven't received client's replay request for a while,
+         * assume completion of recover and start normal processing. */
+        if (server.serverState == SERVER_STATE_ACCEPTING_REPLAY &&
+                server.unixtime - server.last_client_replay > SECONDS_WAITING_REPLAY) {
+            server.serverState = SERVER_STATE_NORMAL;
+            riflEndRecoveryByWitness();
+            serverLog(LL_NOTICE,"Recovery finished (recovered %lld operations). "
+                    "Started to take normal requests.", server.currentOpNum);
+        }
+    }
+
     /* Start a scheduled BGSAVE if the corresponding flag is set. This is
      * useful when we are forced to postpone a BGSAVE because an AOF
      * rewrite is in progress.
@@ -1449,6 +1461,7 @@ void createSharedObjects(void) {
     shared.maxstring = createStringObject("maxstring",9);
     shared.riflDuplicate = createObject(OBJ_STRING,sdsnew("+OK (RIFL duplicate)\r\n"));
     shared.riflClientIdCollision = createObject(OBJ_STRING,sdsnew("-ERR (RIFL clientId collision)\r\n"));
+    shared.unsyncedOk = createObject(OBJ_STRING,sdsnew("@OK "));
 }
 
 void initServerConfig(void) {
@@ -1462,6 +1475,7 @@ void initServerConfig(void) {
     server.arch_bits = (sizeof(long) == 8) ? 64 : 32;
     server.currentOpNum = 0;
     server.port = CONFIG_DEFAULT_SERVER_PORT;
+    server.portForRecovery = CONFIG_DEFAULT_RECOVERY_PORT;
     server.tcp_backlog = CONFIG_DEFAULT_TCP_BACKLOG;
     server.bindaddr_count = 0;
     server.unixsocket = NULL;
@@ -1901,6 +1915,10 @@ void initServer(void) {
         listenToPort(server.port,server.ipfd,&server.ipfd_count) == C_ERR)
         exit(1);
 
+    if (server.portForRecovery != 0 &&
+        listenToPort(server.portForRecovery,server.ipfd4replay,&server.ipfd4replay_count) == C_ERR)
+        exit(1);
+
     /* Open the listening Unix domain socket. */
     if (server.unixsocket != NULL) {
         unlink(server.unixsocket); /* don't care if this fails */
@@ -1935,6 +1953,7 @@ void initServer(void) {
     listSetFreeMethod(server.pubsub_patterns,freePubsubPattern);
     listSetMatchMethod(server.pubsub_patterns,listMatchPubsubPattern);
     server.cronloops = 0;
+    server.serverState = SERVER_STATE_ACCEPTING_REPLAY;
     server.rdb_child_pid = -1;
     server.aof_child_pid = -1;
     server.rdb_child_type = RDB_CHILD_TYPE_NONE;
@@ -1956,6 +1975,7 @@ void initServer(void) {
     server.aof_last_write_errno = 0;
     server.repl_good_slaves_count = 0;
     updateCachedTime();
+    server.last_client_replay = server.unixtime + 5; // give extra 5 secs for bootstrapping.
 
     /* Create the serverCron() time event, that's our main way to process
      * background operations. */
@@ -1972,6 +1992,14 @@ void initServer(void) {
             {
                 serverPanic(
                     "Unrecoverable error creating server.ipfd file event.");
+            }
+    }
+    for (j = 0; j < server.ipfd4replay_count; j++) {
+        if (aeCreateFileEvent(server.el, server.ipfd4replay[j], AE_READABLE,
+            acceptTcpHandler4replay,NULL) == AE_ERR)
+            {
+                serverPanic(
+                    "Unrecoverable error creating server.ipfd4replay file event.");
             }
     }
     if (server.sofd > 0 && aeCreateFileEvent(server.el,server.sofd,AE_READABLE,
@@ -2268,7 +2296,9 @@ void call(client *c, int flags) {
             return;
         }
     }
-    ++server.currentOpNum;
+    if (c->cmd->proc != selectCommand) {
+        ++server.currentOpNum;
+    }
     c->cmd->proc(c);
     duration = ustime()-start;
     dirty = server.dirty-dirty;
@@ -4125,6 +4155,9 @@ int main(int argc, char **argv) {
     } else {
         sentinelIsRunning();
     }
+
+    // Call this only after AOF recovery.
+    riflStartRecoveryByWitness();
 
     /* Warning the user about suspicious maxmemory setting. */
     if (server.maxmemory > 0 && server.maxmemory < 1024*1024) {

@@ -89,7 +89,14 @@ void setGenericCommand(client *c, int flags, robj *key, robj *val, robj *expire,
     notifyKeyspaceEvent(NOTIFY_STRING,"set",key,c->db->id);
     if (expire) notifyKeyspaceEvent(NOTIFY_GENERIC,
         "expire",key,c->db->id);
-    addReply(c, ok_reply ? ok_reply : shared.ok);
+
+//    addReply(c, ok_reply ? ok_reply : shared.ok);
+    if (ok_reply) {
+        addReply(c, ok_reply);
+    } else {
+        sds s = sdsempty();
+        addReplySds(c, sdscatfmt(s, "%S %U %U\r\n", shared.unsyncedOk->ptr, server.currentOpNum, server.aof_last_fsync_opNum));
+    }
 }
 
 /* SET key value [NX] [XX] [EX <seconds>] [PX <milliseconds>] */
@@ -99,8 +106,8 @@ void setCommand(client *c) {
     int unit = UNIT_SECONDS;
     int flags = OBJ_SET_NO_FLAGS;
 
-    // exclude last 3 RIFL arguments from original Redis argument parser.
-    for (j = 3; j < c->argc - 3; j++) {
+    // exclude last 2 RIFL arguments from original Redis argument parser.
+    for (j = 3; j < c->argc - 2; j++) {
         char *a = c->argv[j]->ptr;
         robj *next = (j == c->argc-1 - 3) ? NULL : c->argv[j+1];
 

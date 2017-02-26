@@ -60,9 +60,9 @@ robj *lookupKey(redisDb *db, robj *key, int flags) {
         }
         // TODO(seojin): verify every path needs this...
         if (!(flags & LOOKUP_NOTOUCH) && de->lastModOpNum > server.aof_last_fsync_opNum) {
-            serverLog(LL_NOTICE, "Redis read is reading non-durable data. "
-                    "It is blocked by fsync. ModifiedBy: %lld, Synced: %lld, CurrentOp: %lld",
-                    de->lastModOpNum, server.aof_last_fsync_opNum, server.currentOpNum);
+//            serverLog(LL_NOTICE, "Redis read is reading non-durable data. "
+//                    "It is blocked by fsync. ModifiedBy: %lld, Synced: %lld, CurrentOp: %lld",
+//                    de->lastModOpNum, server.aof_last_fsync_opNum, server.currentOpNum);
             flushAppendOnlyFile(1);
             aof_fsync(server.aof_fd);
             server.aof_last_fsync_opNum = server.currentOpNum - 1;

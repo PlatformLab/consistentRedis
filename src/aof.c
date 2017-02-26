@@ -702,6 +702,8 @@ int loadAppendOnlyFile(char *filename) {
             long long clientId, requestId;
             getLongLongFromObject(argv[argc-2], &clientId);
             getLongLongFromObject(argv[argc-1], &requestId);
+            fakeClient->clientId = clientId;
+            riflCheckClientIdOk(fakeClient);
             riflCheckDuplicate(clientId, requestId);
         }
 

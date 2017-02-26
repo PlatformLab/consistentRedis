@@ -613,7 +613,7 @@ int clientHasPendingReplies(client *c) {
 }
 
 #define MAX_ACCEPTS_PER_CALL 1000
-static void acceptCommonHandler(int fd, int flags, char *ip) {
+static void acceptCommonHandler(int fd, int flags, char *ip, bool isRecovery) {
     client *c;
     if ((c = createClient(fd)) == NULL) {
         serverLog(LL_WARNING,
@@ -622,6 +622,30 @@ static void acceptCommonHandler(int fd, int flags, char *ip) {
         close(fd); /* May be already closed, just ignore errors */
         return;
     }
+    c->isRecovery = isRecovery;
+
+    if (isRecovery && server.serverState >= SERVER_STATE_NORMAL) {
+        // Trial of recovery was too late. Server already served normal requests.
+        char *err = "-ERR server is already in normal mode. Too late for replay.\r\n";
+        if (write(c->fd,err,strlen(err)) == -1) {
+        }
+        server.stat_rejected_conn++;
+        freeClient(c);
+        return;
+    }
+
+    if (!isRecovery && server.serverState <= SERVER_STATE_ACCEPTING_REPLAY) {
+//        char *err = "-RETRY server is not ready.\r\n";
+//        if (write(c->fd,err,strlen(err)) == -1) {
+//        }
+        // Don't send any message. Sending random text causes protocol error
+        // instead of connection_error, which can be automatically handled
+        // and retry later.
+        server.stat_rejected_conn++;
+        freeClient(c);
+        return;
+    }
+
     /* If maxclient directive is set and this is one client more... close the
      * connection. Note that we create the client instead to check before
      * for this condition, since now the socket is already set in non-blocking
@@ -699,7 +723,27 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
             return;
         }
         serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
-        acceptCommonHandler(cfd,0,cip);
+        acceptCommonHandler(cfd,0,cip,false);
+    }
+}
+
+void acceptTcpHandler4replay(aeEventLoop *el, int fd, void *privdata, int mask) {
+    int cport, cfd, max = MAX_ACCEPTS_PER_CALL;
+    char cip[NET_IP_STR_LEN];
+    UNUSED(el);
+    UNUSED(mask);
+    UNUSED(privdata);
+
+    while(max--) {
+        cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);
+        if (cfd == ANET_ERR) {
+            if (errno != EWOULDBLOCK)
+                serverLog(LL_WARNING,
+                    "Accepting client connection for recovery: %s", server.neterr);
+            return;
+        }
+        serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
+        acceptCommonHandler(cfd,0,cip,true);
     }
 }
 
@@ -718,7 +762,7 @@ void acceptUnixHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
             return;
         }
         serverLog(LL_VERBOSE,"Accepted connection to %s", server.unixsocket);
-        acceptCommonHandler(cfd,CLIENT_UNIX_SOCKET,NULL);
+        acceptCommonHandler(cfd,CLIENT_UNIX_SOCKET,NULL,false);
     }
 }
 
@@ -1360,6 +1404,28 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
         freeClient(c);
         return;
     }
+
+    if (c->isRecovery && server.serverState >= SERVER_STATE_NORMAL) {
+        // Trial of recovery was too late. Server already served normal requests.
+        char *err = "-ERR server is already in normal mode. Too late for replay.\r\n";
+        if (write(c->fd,err,strlen(err)) == -1) {
+        }
+        freeClient(c);
+        return;
+    }
+
+    if (!c->isRecovery && server.serverState <= SERVER_STATE_ACCEPTING_REPLAY) {
+        serverLog(LL_WARNING,"Non-recovery connection was accepted while recovery. Dying..");
+        char *err = "-RETRY server is not ready.\r\n";
+        if (write(c->fd,err,strlen(err)) == -1) {
+        }
+        resetClient(c);
+        return;
+//        server.stat_rejected_conn++;
+//        freeClient(c);
+//        exit(1);
+    }
+
     processInputBuffer(c);
 }
 

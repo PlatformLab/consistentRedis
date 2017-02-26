@@ -34,6 +34,7 @@ bool riflCheckDuplicate(long long clientId, long long requestId) {
 
     int index = clientId & bitmask;
     if (processedRpcIds[index] >= requestId) {
+//        serverLog(LL_NOTICE,"RIFL found duplicate. ClientId: %lld, requestId: %lld, lastRpcId: %lld", clientIds[index], requestId, processedRpcIds[index]);
         return true;
     }
     if (!witnessRecoveryMode) {
@@ -42,14 +43,24 @@ bool riflCheckDuplicate(long long clientId, long long requestId) {
     return false;
 }
 
+void riflPrintData() {
+    serverLog(LL_NOTICE,"RIFL Table dump after recovery.");
+    for (int i = 0; i < RIFL_TABLE_SIZE; ++i) {
+        if (clientIds[i] != 0) {
+            serverLog(LL_NOTICE,"ClientId: %lld, lastRpcId: %lld", clientIds[i], processedRpcIds[i]);
+        }
+    }
+}
+
 void riflStartRecoveryByWitness() {
     witnessRecoveryMode = true;
+    riflPrintData();
 }
 
 void riflEndRecoveryByWitness() {
     witnessRecoveryMode = false;
+    riflPrintData();
 }
-
 
 long long riflGetNext(long long clientId) {
     int index = (clientId + 1) & bitmask;
