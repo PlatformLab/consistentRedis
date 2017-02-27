@@ -381,7 +381,10 @@ void incrDecrCommand(client *c, long long incr) {
     server.dirty++;
     addReply(c,shared.colon);
     addReply(c,new);
-    addReply(c,shared.crlf);
+
+    sds s = sdsempty();
+    addReplySds(c, sdscatfmt(s, " %U %U\r\n", server.currentOpNum, server.aof_last_fsync_opNum));
+//    addReply(c,shared.crlf);
 }
 
 void incrCommand(client *c) {

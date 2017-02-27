@@ -524,12 +524,16 @@ void hmsetCommand(client *c) {
     }
 
     if ((o = hashTypeLookupWriteOrCreate(c,c->argv[1])) == NULL) return;
-    hashTypeTryConversion(o,c->argv,2,c->argc-1);
-    for (i = 2; i < c->argc; i += 2) {
+    hashTypeTryConversion(o,c->argv,2,c->argc-1 - 2 /* exclude RIFL args */);
+    for (i = 2; i < c->argc - 2;/* exclude RIFL args */ i += 2) {
         hashTypeTryObjectEncoding(o,&c->argv[i], &c->argv[i+1]);
         hashTypeSet(o,c->argv[i],c->argv[i+1]);
     }
-    addReply(c, shared.ok);
+//    addReply(c, shared.ok);
+    sds s = sdsempty();
+    addReplySds(c, sdscatfmt(s, "%S %U %U\r\n", shared.unsyncedOk->ptr,
+            server.currentOpNum, server.aof_last_fsync_opNum));
+
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(NOTIFY_HASH,"hset",c->argv[1],c->db->id);
     server.dirty++;
