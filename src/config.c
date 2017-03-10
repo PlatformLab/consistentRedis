@@ -227,6 +227,16 @@ void loadServerConfigFromString(char *config) {
             if (errno || server.unixsocketperm > 0777) {
                 err = "Invalid socket file permissions"; goto loaderr;
             }
+        } else if (!strcasecmp(argv[0],"witnessIp") && argc >= 2) {
+            int j, addresses = argc-1;
+
+            if (addresses > CONFIG_WITNESS_MAX) {
+                err = "Too many witness addresses specified"; goto loaderr;
+            }
+            for (j = 0; j < addresses; j++)
+                server.addrToWitness[j] = zstrdup(argv[j+1]);
+            server.numWitness = addresses;
+            serverLog(LL_NOTICE,"%d Witness servers are found.", addresses);
         } else if (!strcasecmp(argv[0],"save")) {
             if (argc == 3) {
                 int seconds = atoi(argv[1]);

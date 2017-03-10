@@ -141,6 +141,7 @@ typedef long long mstime_t; /* millisecond time type. */
 #define CONFIG_BINDADDR_MAX 16
 #define CONFIG_MIN_RESERVED_FDS 32
 #define CONFIG_DEFAULT_LATENCY_MONITOR_THRESHOLD 0
+#define CONFIG_WITNESS_MAX 3
 
 #define ACTIVE_EXPIRE_CYCLE_LOOKUPS_PER_LOOP 20 /* Loopkups per loop. */
 #define ACTIVE_EXPIRE_CYCLE_FAST_DURATION 1000 /* Microseconds */
@@ -275,6 +276,7 @@ typedef long long mstime_t; /* millisecond time type. */
 #define CLIENT_REPLY_SKIP (1<<24)  /* Don't send just this reply. */
 #define CLIENT_LUA_DEBUG (1<<25)  /* Run EVAL in debug mode. */
 #define CLIENT_LUA_DEBUG_SYNC (1<<26)  /* EVAL debugging without fork() */
+#define CLIENT_WITNESS (1<<27)  /* Client is witness type. */
 
 /* Client block type (btype field in client structure)
  * if CLIENT_BLOCKED flag is set. */
@@ -643,6 +645,7 @@ struct sharedObjectsStruct {
     *unsubscribebulk, *psubscribebulk, *punsubscribebulk, *del, *rpop, *lpop,
     *lpush, *emptyscan, *minstring, *maxstring,
     *riflDuplicate, *riflClientIdCollision, *unsyncedOk,
+    *witnessReject, *witnessAccept,
     *select[PROTO_SHARED_SELECT_CMDS],
     *integers[OBJ_SHARED_INTEGERS],
     *mbulkhdr[OBJ_SHARED_BULKHDR_LEN], /* "*<value>\r\n" */
@@ -764,6 +767,9 @@ struct redisServer {
     dict *migrate_cached_sockets;/* MIGRATE cached sockets */
     uint64_t next_client_id;    /* Next client unique ID. Incremental. */
     int protected_mode;         /* Don't accept external connections. */
+    char *addrToWitness[CONFIG_WITNESS_MAX];
+    int fdToWitness[CONFIG_WITNESS_MAX];
+    int numWitness;
     /* RDB / AOF loading information */
     int loading;                /* We are loading data from disk if true */
     off_t loading_total_bytes;
@@ -1163,6 +1169,7 @@ int handleClientsWithPendingWrites(void);
 int clientHasPendingReplies(client *c);
 void unlinkClient(client *c);
 int writeToClient(int fd, client *c, int handler_installed);
+void connectToWitness();
 
 #ifdef __GNUC__
 void addReplyErrorFormat(client *c, const char *fmt, ...)
@@ -1668,6 +1675,12 @@ void pfmergeCommand(client *c);
 void pfdebugCommand(client *c);
 void latencyCommand(client *c);
 void securityWarningCommand(client *c);
+void wrecordCommand(client *c);
+void witnessGcCommand(client *c);
+void witnessGetRecoveryDataCommand(client *c);
+
+// Not command but need to be exposed...
+void witnessInit();
 
 #if defined(__GNUC__)
 void *calloc(size_t count, size_t size) __attribute__ ((deprecated));

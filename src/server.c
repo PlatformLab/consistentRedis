@@ -33,6 +33,7 @@
 #include "bio.h"
 #include "latency.h"
 #include "rifl.h"
+#include "witnessTracker.h"
 
 #include <time.h>
 #include <signal.h>
@@ -297,7 +298,10 @@ struct redisCommand redisCommandTable[] = {
     {"pfdebug",pfdebugCommand,-3,"w",0,NULL,0,0,0,0,0},
     {"post",securityWarningCommand,-1,"lt",0,NULL,0,0,0,0,0},
     {"host:",securityWarningCommand,-1,"lt",0,NULL,0,0,0,0,0},
-    {"latency",latencyCommand,-2,"aslt",0,NULL,0,0,0,0,0}
+    {"latency",latencyCommand,-2,"aslt",0,NULL,0,0,0,0,0},
+    {"wrecord",wrecordCommand,6,"wm",0,NULL,0,0,0,0,0},
+    {"wgc",witnessGcCommand,-5,"wm",0,NULL,0,0,0,0,0},
+    {"wgetrecoverydata",witnessGetRecoveryDataCommand,2,"wm",0,NULL,0,0,0,0,0}
 };
 
 struct evictionPoolEntry *evictionPoolAlloc(void);
@@ -1462,6 +1466,8 @@ void createSharedObjects(void) {
     shared.riflDuplicate = createObject(OBJ_STRING,sdsnew("+OK (RIFL duplicate)\r\n"));
     shared.riflClientIdCollision = createObject(OBJ_STRING,sdsnew("-ERR (RIFL clientId collision)\r\n"));
     shared.unsyncedOk = createObject(OBJ_STRING,sdsnew("@OK "));
+    shared.witnessReject = createObject(OBJ_STRING,sdsnew("+REJECT\r\n"));
+    shared.witnessAccept = createObject(OBJ_STRING,sdsnew("+ACCEPT\r\n"));
 }
 
 void initServerConfig(void) {
@@ -2032,6 +2038,10 @@ void initServer(void) {
     slowlogInit();
     latencyMonitorInit();
     bioInit();
+    witnessInit();
+
+    /* Connect to witness servers */
+    connectToWitness();
 }
 
 /* Populates the Redis Command Table starting from the hard coded list
@@ -2283,7 +2293,8 @@ void call(client *c, int flags) {
     /* Call the command. */
     dirty = server.dirty;
     start = ustime();
-    // TODO(seojin): Add RIFL check.
+
+    // RIFL check.
     if (c->cmd->flags & CMD_AT_MOST_ONCE) {
         getLongLongFromObject(c->argv[c->argc-2], &c->clientId);
         getLongLongFromObject(c->argv[c->argc-1], &c->requestId);
@@ -2300,6 +2311,12 @@ void call(client *c, int flags) {
         ++server.currentOpNum;
     }
     c->cmd->proc(c);
+
+    // Track unsynced change.
+    if (c->cmd->flags & CMD_AT_MOST_ONCE) {
+        trackUnsyncedRpc(c);
+    }
+
     duration = ustime()-start;
     dirty = server.dirty-dirty;
     if (dirty < 0) dirty = 0;
@@ -4158,6 +4175,7 @@ int main(int argc, char **argv) {
 
     // Call this only after AOF recovery.
     riflStartRecoveryByWitness();
+    recoverFromWitness();
 
     /* Warning the user about suspicious maxmemory setting. */
     if (server.maxmemory > 0 && server.maxmemory < 1024*1024) {

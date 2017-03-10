@@ -185,6 +185,18 @@ void *bioProcessBackgroundJobs(void *arg) {
         } else if (type == BIO_AOF_FSYNC) {
             aof_fsync((long)job->arg1);
             server.aof_last_fsync_opNum = job->arg3;
+        } else if (type == BIO_FSYNC_AND_GC_WITNESS) {
+            sds gcCmd = (sds)job->arg1;
+            long long lastOpNum = job->arg3;
+            if (lastOpNum > server.aof_last_fsync_opNum) {
+                aof_fsync((long)job->arg2);
+                server.aof_last_fsync_opNum = lastOpNum;
+            }
+            for (int i = 0; i < server.numWitness; ++i) {
+                if (anetWrite(server.fdToWitness[i], gcCmd, sdslen(gcCmd)) == -1) {
+                    fprintf(stderr, "Error while sending witness GC. %s", strerror(errno));
+                }
+            }
         } else {
             serverPanic("Wrong job type in bioProcessBackgroundJobs().");
         }

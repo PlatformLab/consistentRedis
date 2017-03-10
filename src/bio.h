@@ -38,4 +38,5 @@ void bioKillThreads(void);
 /* Background job opcodes */
 #define BIO_CLOSE_FILE    0 /* Deferred close(2) syscall. */
 #define BIO_AOF_FSYNC     1 /* Deferred AOF fsync. */
-#define BIO_NUM_OPS       2
+#define BIO_FSYNC_AND_GC_WITNESS 2
+#define BIO_NUM_OPS       3

@@ -747,6 +747,26 @@ void acceptTcpHandler4replay(aeEventLoop *el, int fd, void *privdata, int mask) 
     }
 }
 
+void acceptTcpHandler4witness(aeEventLoop *el, int fd, void *privdata, int mask) {
+    int cport, cfd, max = MAX_ACCEPTS_PER_CALL;
+    char cip[NET_IP_STR_LEN];
+    UNUSED(el);
+    UNUSED(mask);
+    UNUSED(privdata);
+
+    while(max--) {
+        cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);
+        if (cfd == ANET_ERR) {
+            if (errno != EWOULDBLOCK)
+                serverLog(LL_WARNING,
+                    "Accepting client connection for recovery: %s", server.neterr);
+            return;
+        }
+        serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
+        acceptCommonHandler(cfd,CLIENT_WITNESS,cip,false);
+    }
+}
+
 void acceptUnixHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     int cfd, max = MAX_ACCEPTS_PER_CALL;
     UNUSED(el);
@@ -2016,4 +2036,18 @@ int processEventsWhileBlocked(void) {
         count += events;
     }
     return count;
+}
+
+void connectToWitness() {
+    for (int i = 0; i < server.numWitness; ++i) {
+        if (server.fdToWitness[i] > 0) {
+            continue;
+        }
+        char err[ANET_ERR_LEN];
+        server.fdToWitness[i] = anetTcpConnect(err, server.addrToWitness[i], server.port);
+        if (server.fdToWitness[i] == ANET_ERR) {
+            serverLog(LL_WARNING, "Error connecting to witness:%s", server.addrToWitness[i]);
+            continue;
+        }
+    }
 }
