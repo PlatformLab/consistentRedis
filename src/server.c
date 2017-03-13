@@ -299,7 +299,7 @@ struct redisCommand redisCommandTable[] = {
     {"post",securityWarningCommand,-1,"lt",0,NULL,0,0,0,0,0},
     {"host:",securityWarningCommand,-1,"lt",0,NULL,0,0,0,0,0},
     {"latency",latencyCommand,-2,"aslt",0,NULL,0,0,0,0,0},
-    {"wrecord",wrecordCommand,6,"wm",0,NULL,0,0,0,0,0},
+    {"wrecord",wrecordCommand,7,"wm",0,NULL,0,0,0,0,0},
     {"wgc",witnessGcCommand,-5,"wm",0,NULL,0,0,0,0,0},
     {"wgetrecoverydata",witnessGetRecoveryDataCommand,2,"wm",0,NULL,0,0,0,0,0}
 };

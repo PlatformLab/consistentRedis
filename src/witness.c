@@ -18,18 +18,22 @@
 
 #define MAX_WITNESS_REQUEST_SIZE 2048
 //    static const int NUM_ENTRIES_PER_TABLE = 512; // Must be power of 2.
-#define WITNESS_NUM_ENTRIES_PER_TABLE 4096 // Must be power of 2.
-#define HASH_BITMASK 4095
+//#define WITNESS_NUM_ENTRIES_PER_TABLE 4096 // Must be power of 2.
+//#define HASH_BITMASK 4095
+#define WITNESS_NUM_ENTRIES_PER_TABLE 1024 // Must be power of 2.
+#define HASH_BITMASK 1023
+#define WITNESS_ASSOCIATIVITY 4
 
 /**
  * Holds information to recover an RPC request in case of the master's crash
  */
 struct Entry {
-    bool occupied; // TODO(seojin): check padding to 64-bit improves perf?
-    int16_t requestSize;
-    int64_t clientId;
-    int64_t requestId;
-    char request[MAX_WITNESS_REQUEST_SIZE];
+    bool occupied[WITNESS_ASSOCIATIVITY]; // TODO(seojin): check padding to 64-bit improves perf?
+    int16_t requestSize[WITNESS_ASSOCIATIVITY];
+    uint32_t keyHash[WITNESS_ASSOCIATIVITY];
+    int64_t clientId[WITNESS_ASSOCIATIVITY];
+    int64_t requestId[WITNESS_ASSOCIATIVITY];
+    char request[WITNESS_ASSOCIATIVITY][MAX_WITNESS_REQUEST_SIZE];
 };
 
 /**
@@ -55,13 +59,14 @@ void witnessInit() {
 
 void wrecordCommand(client *c) {
     long masterIdx, hashIndex;
-    long long clientId, requestId;
+    long long keyHash, clientId, requestId;
     if (getLongFromObjectOrReply(c, c->argv[1], &masterIdx, NULL) != C_OK) return;
     if (getLongFromObjectOrReply(c, c->argv[2], &hashIndex, NULL) != C_OK) return;
-    if (getLongLongFromObjectOrReply(c, c->argv[3], &clientId, NULL) != C_OK) return;
-    if (getLongLongFromObjectOrReply(c, c->argv[4], &requestId, NULL) != C_OK) return;
-    size_t requestSize = sdslen(c->argv[5]->ptr);
-    void* data = c->argv[5]->ptr;
+    if (getLongLongFromObjectOrReply(c, c->argv[3], &keyHash, NULL) != C_OK) return;
+    if (getLongLongFromObjectOrReply(c, c->argv[4], &clientId, NULL) != C_OK) return;
+    if (getLongLongFromObjectOrReply(c, c->argv[5], &requestId, NULL) != C_OK) return;
+    size_t requestSize = sdslen(c->argv[6]->ptr);
+    void* data = c->argv[6]->ptr;
 
     struct Master* buffer = &masters[masterIdx];
     assert(requestSize <= MAX_WITNESS_REQUEST_SIZE);
@@ -73,12 +78,25 @@ void wrecordCommand(client *c) {
         return;
     }
 
-    if (!buffer->table[hashIndex].occupied) {
-        buffer->table[hashIndex].occupied = true;
-        buffer->table[hashIndex].requestSize = requestSize;
-        buffer->table[hashIndex].clientId = clientId;
-        buffer->table[hashIndex].requestId = requestId;
-        memcpy(buffer->table[hashIndex].request, data, requestSize);
+    int slot = WITNESS_ASSOCIATIVITY; // This means not available.
+    for (int i = 0; i < WITNESS_ASSOCIATIVITY; ++i) {
+        if (buffer->table[hashIndex].occupied[i]) {
+            if (buffer->table[hashIndex].keyHash[i] == (uint32_t)keyHash) {
+                // KeyHash collision with existing request.
+                slot = WITNESS_ASSOCIATIVITY;
+                break;
+            }
+        } else {
+            slot = i;
+        }
+    }
+    if (slot < WITNESS_ASSOCIATIVITY) {
+        buffer->table[hashIndex].occupied[slot] = true;
+        buffer->table[hashIndex].keyHash[slot] = (uint32_t)keyHash;
+        buffer->table[hashIndex].requestSize[slot] = requestSize;
+        buffer->table[hashIndex].clientId[slot] = clientId;
+        buffer->table[hashIndex].requestId[slot] = requestId;
+        memcpy(buffer->table[hashIndex].request[slot], data, requestSize);
         addReply(c, shared.witnessAccept);
         ++buffer->occupiedCount;
     } else {
@@ -111,20 +129,23 @@ witnessGcCommand(client *c) {
         if (getLongLongFromObjectOrReply(c, c->argv[i+1], &clientId, NULL) != C_OK) return;
         if (getLongLongFromObjectOrReply(c, c->argv[i+2], &requestId, NULL) != C_OK) return;
 
-        if (buffer->table[hashIndex].occupied &&
-                buffer->table[hashIndex].clientId == clientId &&
-                buffer->table[hashIndex].requestId == requestId) {
-            buffer->table[hashIndex].occupied = false;
-            --buffer->occupiedCount;
-//            succeeded++;
-        } else {
-//            serverLog(LL_NOTICE,"Witness GC failed. hashIndex: %ld, occupied: %d"
-//                    " clientId: %"PRId64" (given %lld) requestId: %"PRId64" (given %lld)",
-//                    hashIndex,
-//                    buffer->table[hashIndex].occupied,
-//                    buffer->table[hashIndex].clientId, clientId,
-//                    buffer->table[hashIndex].requestId, requestId);
-//            failed++;
+        for (int slot = 0; slot < WITNESS_ASSOCIATIVITY; ++slot) {
+            if (buffer->table[hashIndex].occupied[slot] &&
+                    buffer->table[hashIndex].clientId[slot] == clientId &&
+                    buffer->table[hashIndex].requestId[slot] == requestId) {
+                buffer->table[hashIndex].occupied[slot] = false;
+                --buffer->occupiedCount;
+    //            succeeded++;
+                break;
+            } else {
+    //            serverLog(LL_NOTICE,"Witness GC failed. hashIndex: %ld, occupied: %d"
+    //                    " clientId: %"PRId64" (given %lld) requestId: %"PRId64" (given %lld)",
+    //                    hashIndex,
+    //                    buffer->table[hashIndex].occupied,
+    //                    buffer->table[hashIndex].clientId, clientId,
+    //                    buffer->table[hashIndex].requestId, requestId);
+    //            failed++;
+            }
         }
     }
     addReply(c, shared.ok);
@@ -145,17 +166,21 @@ void witnessGetRecoveryDataCommand(client *c) {
     int count = 0;
 //    int totalSize = 0;
     for (int i = 0; i < WITNESS_NUM_ENTRIES_PER_TABLE; ++i) {
-        if (buffer->table[i].occupied) {
-//            totalSize += buffer->table[i].requestSize;
-            count++;
+        for (int slot = 0; slot < WITNESS_ASSOCIATIVITY; ++slot) {
+            if (buffer->table[i].occupied[slot]) {
+    //            totalSize += buffer->table[i].requestSize;
+                count++;
+            }
         }
     }
     addReplyMultiBulkLen(c, count);
 //    addReplyMultiBulkLen(c, totalSize);
     for (int i = 0; i < WITNESS_NUM_ENTRIES_PER_TABLE; ++i) {
-        if (buffer->table[i].occupied) {
-            addReplySds(c, sdsnewlen(buffer->table[i].request,
-                                     buffer->table[i].requestSize));
+        for (int slot = 0; slot < WITNESS_ASSOCIATIVITY; ++slot) {
+            if (buffer->table[i].occupied[slot]) {
+                addReplySds(c, sdsnewlen(buffer->table[i].request[slot],
+                                         buffer->table[i].requestSize[slot]));
+            }
         }
     }
 }

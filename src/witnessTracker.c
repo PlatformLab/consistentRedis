@@ -73,10 +73,10 @@ void scheduleFsyncAndWitnessGc() {
 void trackUnsyncedRpc(client *c) {
     unsyncedRpcs[unsyncedRpcsSize].clientId = c->clientId;
     unsyncedRpcs[unsyncedRpcsSize].requestId = c->requestId;
-    int keyHash;
+    uint32_t keyHash;
     MurmurHash3_x86_32(c->argv[1]->ptr, sdslen(c->argv[1]->ptr), c->db->id, &keyHash);
 //    serverLog(LL_NOTICE, "dictid: %d, key: %s keyLen: %d", c->db->id, (sds)c->argv[1]->ptr, sdslen(c->argv[1]->ptr));
-    unsyncedRpcs[unsyncedRpcsSize].hashIndex = keyHash & 4095;
+    unsyncedRpcs[unsyncedRpcsSize].hashIndex = keyHash & 1023;
     ++unsyncedRpcsSize;
 
     if (unsyncedRpcsSize == WITNESS_BATCH_SIZE) {
