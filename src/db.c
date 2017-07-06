@@ -29,6 +29,7 @@
 
 #include "server.h"
 #include "cluster.h"
+#include "witnessTracker.h"
 
 #include <signal.h>
 #include <ctype.h>
@@ -60,12 +61,16 @@ robj *lookupKey(redisDb *db, robj *key, int flags) {
         }
         // TODO(seojin): verify every path needs this...
         if (!(flags & LOOKUP_NOTOUCH) && de->lastModOpNum > server.aof_last_fsync_opNum) {
+            server.must_aof_fsync = true;
 //            serverLog(LL_NOTICE, "Redis read is reading non-durable data. "
 //                    "It is blocked by fsync. ModifiedBy: %lld, Synced: %lld, CurrentOp: %lld",
 //                    de->lastModOpNum, server.aof_last_fsync_opNum, server.currentOpNum);
-            flushAppendOnlyFile(1);
-            aof_fsync(server.aof_fd);
-            server.aof_last_fsync_opNum = server.currentOpNum - 1;
+//            flushAppendOnlyFile(1);
+//            aof_fsync(server.aof_fd);
+//            server.aof_last_fsync_opNum = server.currentOpNum - 1;
+            //scheduleFsyncAndWitnessGc();
+            // TODO(seojin): move these into after handling all clients.
+            // so that we only fsync once per loop.
         }
         return val;
     } else {

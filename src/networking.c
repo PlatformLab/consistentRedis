@@ -29,6 +29,7 @@
 
 #include "server.h"
 #include <sys/uio.h>
+#include <sys/time.h>
 #include <math.h>
 
 static void setProtocolError(client *c, int pos);
@@ -382,6 +383,31 @@ void addReplyString(client *c, const char *s, size_t len) {
         _addReplyStringToList(c,s,len);
 }
 
+void addReplyOkCgar(client *c) {//, long long arg1, long long arg2) {
+    char reply[31]; // "@OK " + two 64-bit ints encoded in 64-base + "\r\n\0".
+    bzero(reply, 31);
+    memcpy(reply, shared.unsyncedOk->ptr, 4);
+    int offset = 4;
+    int appended = ulltoa64(reply + offset, 28 - offset, server.currentOpNum);
+    if (appended == 0) {
+        serverLog(LL_WARNING,"Error encoding currentOpNum (%lld) to ASCII."
+                " Exiting.",server.currentOpNum);
+            exit(1);
+    }
+    offset += appended;
+    reply[offset++] = ' ';
+    appended = ulltoa64(reply + offset, 28 - offset, server.aof_last_fsync_opNum);
+    if (appended == 0) {
+        serverLog(LL_WARNING,"Error encoding currentOpNum (%lld) to ASCII."
+                " Exiting.",server.currentOpNum);
+            exit(1);
+    }
+    offset += appended;
+    memcpy(reply + offset, "\r\n", 2);
+//    serverLog(LL_NOTICE,"Reply is constructed: %s (length: %d)", reply, offset);
+    addReplyString(c, reply, offset + 2);
+}
+
 void addReplyErrorLength(client *c, const char *s, size_t len) {
     addReplyString(c,"-ERR ",5);
     addReplyString(c,s,len);
@@ -705,6 +731,19 @@ static void acceptCommonHandler(int fd, int flags, char *ip, bool isRecovery) {
 
     server.stat_numconnections++;
     c->flags |= flags;
+
+    // For throughput benchmark, print the throughput from last new connection.
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+    unsigned long long currentTime = 1000000 * tv.tv_sec + tv.tv_usec;
+    serverLog(LL_NOTICE, "PerfStat (clientNum, throughput (kops/sec), timestamp): "
+            "%4lu %7.2f %12llu",
+            listLength(server.clients) - 1,
+            (double)(server.currentOpNum - server.last_client_connected_opNum)
+                * 1e3 / (currentTime - server.last_client_connected_usec),
+            currentTime);
+    server.last_client_connected_usec = currentTime;
+    server.last_client_connected_opNum = server.currentOpNum;
 }
 
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {

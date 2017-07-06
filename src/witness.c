@@ -34,6 +34,7 @@ struct Entry {
     int64_t clientId[WITNESS_ASSOCIATIVITY];
     int64_t requestId[WITNESS_ASSOCIATIVITY];
     char request[WITNESS_ASSOCIATIVITY][MAX_WITNESS_REQUEST_SIZE];
+    unsigned long long GcSeqNum[WITNESS_ASSOCIATIVITY]; // GcRpcCount when it arrived.
 };
 
 /**
@@ -45,7 +46,31 @@ struct Master {
     bool writable;
     struct Entry table[WITNESS_NUM_ENTRIES_PER_TABLE];
     int occupiedCount;
+    int gcMissedCount;
+    unsigned long long totalGcRpcs;
+    int totalRecordRpcs;
+    int totalRejection;
+    int trueCollision;
 };
+
+struct WitnessGcInfo {
+    int hashIndex;
+    long long clientId;
+    long long requestId;
+};
+
+/* 0th index is not used. */
+struct WitnessGcInfo obsoleteRpcs[50] = {{0,0,0}, };
+int obsoleteRpcsSize = 0;
+
+void addToObsoleteRpcs(int hashIndex, long long clientId, long long requestId) {
+    if (obsoleteRpcsSize < 50) {
+        obsoleteRpcs[obsoleteRpcsSize].hashIndex = hashIndex;
+        obsoleteRpcs[obsoleteRpcsSize].clientId = clientId;
+        obsoleteRpcs[obsoleteRpcsSize].requestId = requestId;
+    }
+    // Just ignore if this buffer is full..
+}
 
 struct Master masters[10];
 time_t lastStatPrintTime = 0;
@@ -72,6 +97,7 @@ void wrecordCommand(client *c) {
     assert(requestSize <= MAX_WITNESS_REQUEST_SIZE);
     assert(hashIndex < WITNESS_NUM_ENTRIES_PER_TABLE);
 
+    buffer->totalRecordRpcs++;
     // Sanity check.
     if (!buffer->writable) {
         addReply(c, shared.witnessReject);
@@ -81,9 +107,24 @@ void wrecordCommand(client *c) {
     int slot = WITNESS_ASSOCIATIVITY; // This means not available.
     for (int i = 0; i < WITNESS_ASSOCIATIVITY; ++i) {
         if (buffer->table[hashIndex].occupied[i]) {
+            // Check slot has obsolete RPC.
+            if (buffer->totalGcRpcs - buffer->table[hashIndex].GcSeqNum[i] > 100) {
+                // Temporary hack. assuming the timing gap between witness
+                // and master RPCs are not over 40ms.
+                // If the entry has been stayed over 1000 cycles, just delete.
+//                serverLog(LL_NOTICE,"Obsolete witness record detected. Re-using this slot");
+                --buffer->occupiedCount;
+                slot = i;
+                break;
+            } else if (buffer->totalGcRpcs - buffer->table[hashIndex].GcSeqNum[i] > 2) {
+                // Put it in ObsoleteRecords.
+                addToObsoleteRpcs(hashIndex, clientId, requestId);
+            }
+
             if (buffer->table[hashIndex].keyHash[i] == (uint32_t)keyHash) {
                 // KeyHash collision with existing request.
                 slot = WITNESS_ASSOCIATIVITY;
+                buffer->trueCollision++;
                 break;
             }
         } else {
@@ -97,10 +138,12 @@ void wrecordCommand(client *c) {
         buffer->table[hashIndex].clientId[slot] = clientId;
         buffer->table[hashIndex].requestId[slot] = requestId;
         memcpy(buffer->table[hashIndex].request[slot], data, requestSize);
+        buffer->table[hashIndex].GcSeqNum[slot] = buffer->totalGcRpcs;
         addReply(c, shared.witnessAccept);
         ++buffer->occupiedCount;
     } else {
         addReply(c, shared.witnessReject);
+        buffer->totalRejection++;
 #if 0
         char* dataInStr = malloc(buffer->table[hashIndex].requestSize + 1);
         memcpy(dataInStr, buffer->table[hashIndex].request, buffer->table[hashIndex].requestSize);
@@ -129,12 +172,14 @@ witnessGcCommand(client *c) {
         if (getLongLongFromObjectOrReply(c, c->argv[i+1], &clientId, NULL) != C_OK) return;
         if (getLongLongFromObjectOrReply(c, c->argv[i+2], &requestId, NULL) != C_OK) return;
 
+        bool foundInTable = false;
         for (int slot = 0; slot < WITNESS_ASSOCIATIVITY; ++slot) {
             if (buffer->table[hashIndex].occupied[slot] &&
                     buffer->table[hashIndex].clientId[slot] == clientId &&
                     buffer->table[hashIndex].requestId[slot] == requestId) {
                 buffer->table[hashIndex].occupied[slot] = false;
                 --buffer->occupiedCount;
+                foundInTable = true;
     //            succeeded++;
                 break;
             } else {
@@ -147,13 +192,31 @@ witnessGcCommand(client *c) {
     //            failed++;
             }
         }
+        if (!foundInTable) {
+            ++buffer->gcMissedCount;
+        }
     }
-    addReply(c, shared.ok);
+    ++buffer->totalGcRpcs;
+//    addReply(c, shared.ok);
+
+    // Reply with ObsoleteRpcs.
+    addReplyMultiBulkLen(c, obsoleteRpcsSize * 3);
+    for (int i = 0; i < obsoleteRpcsSize; ++i) {
+        addReplyBulkLongLong(c, obsoleteRpcs[i].hashIndex);
+        addReplyBulkLongLong(c, obsoleteRpcs[i].clientId);
+        addReplyBulkLongLong(c, obsoleteRpcs[i].requestId);
+    }
+    obsoleteRpcsSize = 0;
+
 //    serverLog(LL_NOTICE,"Witness GC received. total entries: %d, cleaned: %d, failed: %d",
 //            (c->argc-2)/3, succeeded, failed);
     if (server.unixtime - lastStatPrintTime > 10) {
-        serverLog(LL_NOTICE,"Witness stat.. occupied: %d, use ratio: %2.3f",
-                buffer->occupiedCount, ((double)buffer->occupiedCount * 100) / WITNESS_NUM_ENTRIES_PER_TABLE);
+        serverLog(LL_NOTICE,"Witness stat.. occupied: %d, use ratio: %2.3f %%, total GC missed count: %d, total GC rpcs: %llu, total rejection: %d, false collision: %d, cumRejectRate: %4.3f %%",
+                buffer->occupiedCount, ((double)buffer->occupiedCount * 100) /
+                WITNESS_NUM_ENTRIES_PER_TABLE / WITNESS_ASSOCIATIVITY,
+                buffer->gcMissedCount, buffer->totalGcRpcs, buffer->totalRejection,
+                buffer->totalRejection - buffer->trueCollision,
+                (double)(buffer->totalRejection) * 100 / (double)(buffer->totalRecordRpcs));
         lastStatPrintTime = server.unixtime;
     }
 }

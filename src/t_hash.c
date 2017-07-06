@@ -530,9 +530,10 @@ void hmsetCommand(client *c) {
         hashTypeSet(o,c->argv[i],c->argv[i+1]);
     }
 //    addReply(c, shared.ok);
-    sds s = sdsempty();
-    addReplySds(c, sdscatfmt(s, "%S %U %U\r\n", shared.unsyncedOk->ptr,
-            server.currentOpNum, server.aof_last_fsync_opNum));
+    addReplyOkCgar(c);
+//    sds s = sdsempty();
+//    addReplySds(c, sdscatfmt(s, "%S %U %U\r\n", shared.unsyncedOk->ptr,
+//            server.currentOpNum, server.aof_last_fsync_opNum));
 
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(NOTIFY_HASH,"hset",c->argv[1],c->db->id);

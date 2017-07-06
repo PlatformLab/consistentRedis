@@ -631,6 +631,25 @@ int getLongLongFromObject(robj *o, long long *target) {
     return C_OK;
 }
 
+int getLongLongFromObjectInBase64(robj *o, long long *target) {
+    long long value;
+
+    if (o == NULL) {
+        value = 0;
+    } else {
+        serverAssertWithInfo(NULL,o,o->type == OBJ_STRING);
+        if (sdsEncodedObject(o)) {
+            if (base64int2ll(o->ptr,sdslen(o->ptr),&value) == 0) return C_ERR;
+        } else if (o->encoding == OBJ_ENCODING_INT) {
+            value = (long)o->ptr;
+        } else {
+            serverPanic("Unknown string encoding");
+        }
+    }
+    if (target) *target = value;
+    return C_OK;
+}
+
 int getLongLongFromObjectOrReply(client *c, robj *o, long long *target, const char *msg) {
     long long value;
     if (getLongLongFromObject(o, &value) != C_OK) {

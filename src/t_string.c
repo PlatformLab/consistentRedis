@@ -94,8 +94,18 @@ void setGenericCommand(client *c, int flags, robj *key, robj *val, robj *expire,
     if (ok_reply) {
         addReply(c, ok_reply);
     } else {
-        sds s = sdsempty();
-        addReplySds(c, sdscatfmt(s, "%S %U %U\r\n", shared.unsyncedOk->ptr, server.currentOpNum, server.aof_last_fsync_opNum));
+        addReplyOkCgar(c);
+//        char reply[28]; // "@OK " + two 64-bit ints encoded in 64-base.
+//        bzero(reply, 28);
+//        memcpy(reply, shared.unsyncedOk->ptr, 4);
+//        int offset = 4;
+//        offset += ulltoa64(reply + offset, 28 - offset, server.currentOpNum);
+//        reply[offset++] = ' ';
+//        ulltoa64(reply + offset, 28 - offset, server.aof_last_fsync_opNum);
+//        addReplyString(c, reply, offset);
+
+//        sds s = sdsempty();
+//        addReplySds(c, sdscatfmt(s, "%S %U %U\r\n", shared.unsyncedOk->ptr, server.currentOpNum, server.aof_last_fsync_opNum));
     }
 }
 
@@ -382,8 +392,9 @@ void incrDecrCommand(client *c, long long incr) {
     addReply(c,shared.colon);
     addReply(c,new);
 
-    sds s = sdsempty();
-    addReplySds(c, sdscatfmt(s, " %U %U\r\n", server.currentOpNum, server.aof_last_fsync_opNum));
+    addReplyOkCgar(c);
+//    sds s = sdsempty();
+//    addReplySds(c, sdscatfmt(s, " %U %U\r\n", server.currentOpNum, server.aof_last_fsync_opNum));
 //    addReply(c,shared.crlf);
 }
 

@@ -50,8 +50,8 @@ struct WitnessGcBioContext {
 void scheduleFsyncAndWitnessGc() {
     char* masterIdxStr = "1";
     sds cmdstr = sdscatprintf(sdsempty(), "*%d\r\n$3\r\nWGC\r\n$%d\r\n%s\r\n",
-            2 + 3 * WITNESS_BATCH_SIZE, (int)strlen(masterIdxStr), masterIdxStr);
-    for (int i = 0; i < WITNESS_BATCH_SIZE; ++i) {
+            2 + 3 * unsyncedRpcsSize, (int)strlen(masterIdxStr), masterIdxStr);
+    for (int i = 0; i < unsyncedRpcsSize; ++i) {
         int hashIndex_len, clientId_len, requestId_len;
         char hashIndex_str[LONG_STR_SIZE];
         char clientId_str[LONG_STR_SIZE];
@@ -65,6 +65,7 @@ void scheduleFsyncAndWitnessGc() {
         cmdstr = sdscatprintf(cmdstr, "$%d\r\n%s\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
                 hashIndex_len, hashIndex_str, clientId_len, clientId_str, requestId_len, requestId_str);
     }
+    unsyncedRpcsSize = 0;
 
     bioCreateBackgroundJob(BIO_FSYNC_AND_GC_WITNESS, (void*)cmdstr,
             (void*)(long)server.aof_fd, server.currentOpNum);
@@ -81,7 +82,6 @@ void trackUnsyncedRpc(client *c) {
 
     if (unsyncedRpcsSize == WITNESS_BATCH_SIZE) {
         scheduleFsyncAndWitnessGc();
-        unsyncedRpcsSize = 0;
     }
 }
 

@@ -203,7 +203,7 @@ void pushGenericCommand(client *c, int where) {
         return;
     }
 
-    for (j = 2; j < c->argc; j++) {
+    for (j = 2; j < c->argc - 2; j++) {
         c->argv[j] = tryObjectEncoding(c->argv[j]);
         if (!lobj) {
             lobj = createQuicklistObject();

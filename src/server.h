@@ -446,7 +446,7 @@ typedef long long mstime_t; /* millisecond time type. */
 #define SERVER_STATE_ACCEPTING_REPLAY 1   /* Server only takes client's replay requests. */
 #define SERVER_STATE_NORMAL 2           /* Server takes normal request now. */
 
-#define SECONDS_WAITING_REPLAY 10       /* server waits extra seconds after last
+#define SECONDS_WAITING_REPLAY 2       /* server waits extra seconds after last
                                            client replay before swithing from
                         SERVER_STATE_ACCEPTING_REPLAY to SERVER_STATE_NORMAL. */
 
@@ -770,6 +770,9 @@ struct redisServer {
     char *addrToWitness[CONFIG_WITNESS_MAX];
     int fdToWitness[CONFIG_WITNESS_MAX];
     int numWitness;
+    /* For throughput benchmark */
+    unsigned long long last_client_connected_usec;
+    long long last_client_connected_opNum;
     /* RDB / AOF loading information */
     int loading;                /* We are loading data from disk if true */
     off_t loading_total_bytes;
@@ -823,6 +826,7 @@ struct redisServer {
     /* AOF persistence */
     int aof_state;                  /* AOF_(ON|OFF|WAIT_REWRITE) */
     int aof_fsync;                  /* Kind of fsync() policy */
+    bool must_aof_fsync;                  /* indicate this ae cycle need to fsync before responding to client. */
     char *aof_filename;             /* Name of the AOF file */
     int aof_no_fsync_on_rewrite;    /* Don't fsync if a rewrite is in prog. */
     int aof_rewrite_perc;           /* Rewrite AOF if % growth is > M and... */

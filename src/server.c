@@ -144,7 +144,7 @@ struct redisCommand redisCommandTable[] = {
     {"decr",decrCommand,2,"wmF",0,NULL,1,1,1,0,0},
     {"mget",mgetCommand,-2,"r",0,NULL,1,-1,1,0,0},
     {"rpush",rpushCommand,-3,"wmF",0,NULL,1,1,1,0,0},
-    {"lpush",lpushCommand,-3,"wmF",0,NULL,1,1,1,0,0},
+    {"lpush",lpushCommand,-5,"wmFO",0,NULL,1,1,1,0,0},
     {"rpushx",rpushxCommand,3,"wmF",0,NULL,1,1,1,0,0},
     {"lpushx",lpushxCommand,3,"wmF",0,NULL,1,1,1,0,0},
     {"linsert",linsertCommand,5,"wm",0,NULL,1,1,1,0,0},
@@ -1296,6 +1296,8 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     run_with_period(1000) {
         /* If server haven't received client's replay request for a while,
          * assume completion of recover and start normal processing. */
+        // TODO(seojin): check recovered by witness. And don't wait if
+        // recovered by witness.
         if (server.serverState == SERVER_STATE_ACCEPTING_REPLAY &&
                 server.unixtime - server.last_client_replay > SECONDS_WAITING_REPLAY) {
             server.serverState = SERVER_STATE_NORMAL;
@@ -1482,6 +1484,8 @@ void initServerConfig(void) {
     server.currentOpNum = 0;
     server.port = CONFIG_DEFAULT_SERVER_PORT;
     server.portForRecovery = CONFIG_DEFAULT_RECOVERY_PORT;
+    server.last_client_connected_usec = 0;
+    server.last_client_connected_opNum = 0;
     server.tcp_backlog = CONFIG_DEFAULT_TCP_BACKLOG;
     server.bindaddr_count = 0;
     server.unixsocket = NULL;
@@ -1506,6 +1510,7 @@ void initServerConfig(void) {
     server.supervised_mode = SUPERVISED_NONE;
     server.aof_state = AOF_OFF;
     server.aof_fsync = CONFIG_DEFAULT_AOF_FSYNC;
+    server.must_aof_fsync = false;
     server.aof_no_fsync_on_rewrite = CONFIG_DEFAULT_AOF_NO_FSYNC_ON_REWRITE;
     server.aof_rewrite_perc = AOF_REWRITE_PERC;
     server.aof_rewrite_min_size = AOF_REWRITE_MIN_SIZE;
@@ -2296,8 +2301,13 @@ void call(client *c, int flags) {
 
     // RIFL check.
     if (c->cmd->flags & CMD_AT_MOST_ONCE) {
-        getLongLongFromObject(c->argv[c->argc-2], &c->clientId);
-        getLongLongFromObject(c->argv[c->argc-1], &c->requestId);
+//        getLongLongFromObject(c->argv[c->argc-2], &c->clientId);
+//        getLongLongFromObject(c->argv[c->argc-1], &c->requestId);
+        getLongLongFromObjectInBase64(c->argv[c->argc-2], &c->clientId);
+        getLongLongFromObjectInBase64(c->argv[c->argc-1], &c->requestId);
+
+//        serverLog(LL_NOTICE,"clientId: %lld, requestId: %lld", c->clientId, c->requestId);
+
         if (!riflCheckClientIdOk(c)) {
             addReply(c, shared.riflClientIdCollision);
             return;
@@ -2307,13 +2317,13 @@ void call(client *c, int flags) {
             return;
         }
     }
-    if (c->cmd->proc != selectCommand) {
+    if (c->cmd->proc != selectCommand && c->cmd->flags & CMD_WRITE) {
         ++server.currentOpNum;
     }
     c->cmd->proc(c);
 
     // Track unsynced change.
-    if (c->cmd->flags & CMD_AT_MOST_ONCE) {
+    if (c->cmd->flags & CMD_AT_MOST_ONCE && server.numWitness > 0) {
         trackUnsyncedRpc(c);
     }
 

@@ -432,7 +432,7 @@ void flushAppendOnlyFile(int force) {
             return;
 
     /* Perform the fsync if needed. */
-    if (server.aof_fsync == AOF_FSYNC_ALWAYS) {
+    if (server.aof_fsync == AOF_FSYNC_ALWAYS || server.must_aof_fsync) {
         /* aof_fsync is defined as fdatasync() for Linux in order to avoid
          * flushing metadata. */
         latencyStartMonitor(latency);
@@ -446,6 +446,7 @@ void flushAppendOnlyFile(int force) {
         if (!sync_in_progress) aof_background_fsync(server.aof_fd);
         server.aof_last_fsync = server.unixtime;
     }
+    server.must_aof_fsync = false;
 }
 
 sds catAppendOnlyGenericCommand(sds dst, int argc, robj **argv) {
@@ -700,8 +701,9 @@ int loadAppendOnlyFile(char *filename) {
         // TODO(seojin): RIFL here?
         if (cmd->flags & CMD_AT_MOST_ONCE) {
             long long clientId, requestId;
-            getLongLongFromObject(argv[argc-2], &clientId);
-            getLongLongFromObject(argv[argc-1], &requestId);
+            getLongLongFromObjectInBase64(argv[argc-2], &clientId);
+            getLongLongFromObjectInBase64(argv[argc-1], &requestId);
+
             fakeClient->clientId = clientId;
             riflCheckClientIdOk(fakeClient);
             riflCheckDuplicate(clientId, requestId);
