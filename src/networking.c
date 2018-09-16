@@ -28,6 +28,7 @@
  */
 
 #include "server.h"
+#include "timeTrace.h"
 #include <sys/uio.h>
 #include <sys/time.h>
 #include <math.h>
@@ -404,7 +405,8 @@ void addReplyOkCgar(client *c) {//, long long arg1, long long arg2) {
     }
     offset += appended;
     memcpy(reply + offset, "\r\n", 2);
-//    serverLog(LL_NOTICE,"Reply is constructed: %s (length: %d)", reply, offset);
+
+//    record("Constructed reply string with two longs", 0, 0, 0, 0);
     addReplyString(c, reply, offset + 2);
 }
 
@@ -1084,6 +1086,7 @@ int writeToClient(int fd, client *c, int handler_installed) {
             return C_ERR;
         }
     }
+//    record("Replied to client", 0, 0, 0, 0);
     return C_OK;
 }
 
@@ -1416,6 +1419,8 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     UNUSED(el);
     UNUSED(mask);
 
+//    record("file event detected.", 0, 0, 0, 0);
+
     readlen = PROTO_IOBUF_LEN;
     /* If this is a multi bulk request, and we are processing a bulk reply
      * that is large enough, try to maximize the probability that the query
@@ -1464,6 +1469,7 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
         return;
     }
 
+//    record("started checking server is in recovery mode.", 0, 0, 0, 0);
     if (c->isRecovery && server.serverState >= SERVER_STATE_NORMAL) {
         // Trial of recovery was too late. Server already served normal requests.
         char *err = "-ERR server is already in normal mode. Too late for replay.\r\n";
@@ -1485,6 +1491,7 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
 //        exit(1);
     }
 
+//    record("checked server is in recovery mode.", 0, 0, 0, 0);
     processInputBuffer(c);
 }
 

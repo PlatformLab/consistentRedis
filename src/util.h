@@ -39,6 +39,8 @@ long long memtoll(const char *p, int *err);
 uint32_t digits10(uint64_t v);
 uint32_t sdigits10(int64_t v);
 int ll2string(char *s, size_t len, long long value);
+int ulltoa64(char* dst, size_t dstlen, long long svalue);
+int base64int2ll(const char *s, size_t slen, long long *value);
 int string2ll(const char *s, size_t slen, long long *value);
 int string2l(const char *s, size_t slen, long *value);
 int d2string(char *buf, size_t len, double value);

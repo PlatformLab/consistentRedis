@@ -34,6 +34,7 @@
 #include "latency.h"
 #include "rifl.h"
 #include "witnessTracker.h"
+#include "timeTrace.h"
 
 #include <time.h>
 #include <signal.h>
@@ -2301,13 +2302,13 @@ void call(client *c, int flags) {
 
     // RIFL check.
     if (c->cmd->flags & CMD_AT_MOST_ONCE) {
-//        getLongLongFromObject(c->argv[c->argc-2], &c->clientId);
-//        getLongLongFromObject(c->argv[c->argc-1], &c->requestId);
+//        record("Starting preprocessing for RIFL", 0, 0, 0, 0);
         getLongLongFromObjectInBase64(c->argv[c->argc-2], &c->clientId);
         getLongLongFromObjectInBase64(c->argv[c->argc-1], &c->requestId);
 
 //        serverLog(LL_NOTICE,"clientId: %lld, requestId: %lld", c->clientId, c->requestId);
 
+//        record("Parsing for RIFL", 0, 0, 0, 0);
         if (!riflCheckClientIdOk(c)) {
             addReply(c, shared.riflClientIdCollision);
             return;
@@ -2316,15 +2317,18 @@ void call(client *c, int flags) {
             addReply(c, shared.riflDuplicate);
             return;
         }
+//        record("RIFL check completed", 0, 0, 0, 0);
     }
     if (c->cmd->proc != selectCommand && c->cmd->flags & CMD_WRITE) {
         ++server.currentOpNum;
     }
     c->cmd->proc(c);
 
+//    record("Executed command", 0, 0, 0, 0);
     // Track unsynced change.
     if (c->cmd->flags & CMD_AT_MOST_ONCE && server.numWitness > 0) {
         trackUnsyncedRpc(c);
+//        record("Tracked unsyncedRPC", 0, 0, 0, 0);
     }
 
     duration = ustime()-start;
@@ -2417,6 +2421,7 @@ void call(client *c, int flags) {
         redisOpArrayFree(&server.also_propagate);
     }
     server.stat_numcommands++;
+//    record("End of call()", 0, 0, 0, 0);
 }
 
 /* If this function gets called we already read a whole
@@ -2696,6 +2701,8 @@ int prepareForShutdown(int flags) {
     closeListeningSockets(1);
     serverLog(LL_WARNING,"%s is now ready to exit, bye bye...",
         server.sentinel_mode ? "Sentinel" : "Redis");
+
+    printTrace("/shome/resultRedis/redis.tt");
     return C_OK;
 }
 

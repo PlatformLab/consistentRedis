@@ -85,11 +85,11 @@ void witnessInit() {
 void wrecordCommand(client *c) {
     long masterIdx, hashIndex;
     long long keyHash, clientId, requestId;
-    if (getLongFromObjectOrReply(c, c->argv[1], &masterIdx, NULL) != C_OK) return;
-    if (getLongFromObjectOrReply(c, c->argv[2], &hashIndex, NULL) != C_OK) return;
-    if (getLongLongFromObjectOrReply(c, c->argv[3], &keyHash, NULL) != C_OK) return;
-    if (getLongLongFromObjectOrReply(c, c->argv[4], &clientId, NULL) != C_OK) return;
-    if (getLongLongFromObjectOrReply(c, c->argv[5], &requestId, NULL) != C_OK) return;
+    if (getLongFromObjectInBase64OrReply(c, c->argv[1], &masterIdx, NULL) != C_OK) return;
+    if (getLongFromObjectInBase64OrReply(c, c->argv[2], &hashIndex, NULL) != C_OK) return;
+    if (getLongLongFromObjectInBase64OrReply(c, c->argv[3], &keyHash, NULL) != C_OK) return;
+    if (getLongLongFromObjectInBase64OrReply(c, c->argv[4], &clientId, NULL) != C_OK) return;
+    if (getLongLongFromObjectInBase64OrReply(c, c->argv[5], &requestId, NULL) != C_OK) return;
     size_t requestSize = sdslen(c->argv[6]->ptr);
     void* data = c->argv[6]->ptr;
 
@@ -168,9 +168,9 @@ witnessGcCommand(client *c) {
     for (int i = 2; i < c->argc; i += 3) {
         long hashIndex;
         long long clientId, requestId;
-        if (getLongFromObjectOrReply(c, c->argv[i], &hashIndex, NULL) != C_OK) return;
-        if (getLongLongFromObjectOrReply(c, c->argv[i+1], &clientId, NULL) != C_OK) return;
-        if (getLongLongFromObjectOrReply(c, c->argv[i+2], &requestId, NULL) != C_OK) return;
+        if (getLongFromObjectInBase64OrReply(c, c->argv[i], &hashIndex, NULL) != C_OK) return;
+        if (getLongLongFromObjectInBase64OrReply(c, c->argv[i+1], &clientId, NULL) != C_OK) return;
+        if (getLongLongFromObjectInBase64OrReply(c, c->argv[i+2], &requestId, NULL) != C_OK) return;
 
         bool foundInTable = false;
         for (int slot = 0; slot < WITNESS_ASSOCIATIVITY; ++slot) {

@@ -20,6 +20,7 @@
 #include "sds.h"
 #include "MurmurHash3.h"
 #include "rifl.h"
+#include "timeTrace.h"
 
 /* functions from aof.c */
 struct client *createFakeClient();
@@ -48,6 +49,7 @@ struct WitnessGcBioContext {
 
 /*================================= Functions =============================== */
 void scheduleFsyncAndWitnessGc() {
+    record("start constructing gc RPC.", 0, 0, 0, 0);
     char* masterIdxStr = "1";
     sds cmdstr = sdscatprintf(sdsempty(), "*%d\r\n$3\r\nWGC\r\n$%d\r\n%s\r\n",
             2 + 3 * unsyncedRpcsSize, (int)strlen(masterIdxStr), masterIdxStr);
@@ -56,22 +58,32 @@ void scheduleFsyncAndWitnessGc() {
         char hashIndex_str[LONG_STR_SIZE];
         char clientId_str[LONG_STR_SIZE];
         char requestId_str[LONG_STR_SIZE];
-        hashIndex_len = ll2string(hashIndex_str, sizeof(hashIndex_str),
+
+        hashIndex_len = ulltoa64(hashIndex_str, sizeof(hashIndex_str),
                 unsyncedRpcs[i].hashIndex);
-        clientId_len = ll2string(clientId_str, sizeof(clientId_str),
+        clientId_len = ulltoa64(clientId_str, sizeof(clientId_str),
                 unsyncedRpcs[i].clientId);
-        requestId_len = ll2string(requestId_str, sizeof(requestId_str),
+        requestId_len = ulltoa64(requestId_str, sizeof(requestId_str),
                 unsyncedRpcs[i].requestId);
+//        hashIndex_len = ll2string(hashIndex_str, sizeof(hashIndex_str),
+//                unsyncedRpcs[i].hashIndex);
+//        clientId_len = ll2string(clientId_str, sizeof(clientId_str),
+//                unsyncedRpcs[i].clientId);
+//        requestId_len = ll2string(requestId_str, sizeof(requestId_str),
+//                unsyncedRpcs[i].requestId);
         cmdstr = sdscatprintf(cmdstr, "$%d\r\n%s\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
                 hashIndex_len, hashIndex_str, clientId_len, clientId_str, requestId_len, requestId_str);
     }
     unsyncedRpcsSize = 0;
 
+    record("constructed gc RPC.", 0, 0, 0, 0);
     bioCreateBackgroundJob(BIO_FSYNC_AND_GC_WITNESS, (void*)cmdstr,
             (void*)(long)server.aof_fd, server.currentOpNum);
+    record("bioBackgroundJob Created.", 0, 0, 0, 0);
 }
 
 void trackUnsyncedRpc(client *c) {
+    record("tracking UnsyncedRpc", 0, 0, 0, 0);
     unsyncedRpcs[unsyncedRpcsSize].clientId = c->clientId;
     unsyncedRpcs[unsyncedRpcsSize].requestId = c->requestId;
     uint32_t keyHash;
@@ -79,6 +91,7 @@ void trackUnsyncedRpc(client *c) {
 //    serverLog(LL_NOTICE, "dictid: %d, key: %s keyLen: %d", c->db->id, (sds)c->argv[1]->ptr, sdslen(c->argv[1]->ptr));
     unsyncedRpcs[unsyncedRpcsSize].hashIndex = keyHash & 1023;
     ++unsyncedRpcsSize;
+    record("tracking done", 0, 0, 0, 0);
 
     if (unsyncedRpcsSize == WITNESS_BATCH_SIZE) {
         scheduleFsyncAndWitnessGc();

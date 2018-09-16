@@ -28,6 +28,7 @@
  */
 
 #include "server.h"
+#include "timeTrace.h"
 #include <math.h> /* isnan(), isinf() */
 
 /*-----------------------------------------------------------------------------
@@ -90,23 +91,19 @@ void setGenericCommand(client *c, int flags, robj *key, robj *val, robj *expire,
     if (expire) notifyKeyspaceEvent(NOTIFY_GENERIC,
         "expire",key,c->db->id);
 
-//    addReply(c, ok_reply ? ok_reply : shared.ok);
-    if (ok_reply) {
-        addReply(c, ok_reply);
-    } else {
-        addReplyOkCgar(c);
-//        char reply[28]; // "@OK " + two 64-bit ints encoded in 64-base.
-//        bzero(reply, 28);
-//        memcpy(reply, shared.unsyncedOk->ptr, 4);
-//        int offset = 4;
-//        offset += ulltoa64(reply + offset, 28 - offset, server.currentOpNum);
-//        reply[offset++] = ' ';
-//        ulltoa64(reply + offset, 28 - offset, server.aof_last_fsync_opNum);
-//        addReplyString(c, reply, offset);
 
-//        sds s = sdsempty();
-//        addReplySds(c, sdscatfmt(s, "%S %U %U\r\n", shared.unsyncedOk->ptr, server.currentOpNum, server.aof_last_fsync_opNum));
-    }
+//    record("executed SET command", 0, 0, 0, 0);
+    addReply(c, ok_reply ? ok_reply : shared.ok);
+
+////////////// DISABLED CGAR-C ///////////////////
+//    if (ok_reply) {
+//        addReply(c, ok_reply);
+//    } else {
+//
+//        addReplyOkCgar(c);
+//        record("added reply string", 0, 0, 0, 0);
+//    }
+////////////// DISABLED CGAR-C ///////////////////
 }
 
 /* SET key value [NX] [XX] [EX <seconds>] [PX <milliseconds>] */
@@ -392,10 +389,8 @@ void incrDecrCommand(client *c, long long incr) {
     addReply(c,shared.colon);
     addReply(c,new);
 
-    addReplyOkCgar(c);
-//    sds s = sdsempty();
-//    addReplySds(c, sdscatfmt(s, " %U %U\r\n", server.currentOpNum, server.aof_last_fsync_opNum));
-//    addReply(c,shared.crlf);
+    addReply(c,shared.crlf);
+//DISABLE CGAR-C    addReplyOkCgar(c);
 }
 
 void incrCommand(client *c) {
