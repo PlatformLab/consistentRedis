@@ -32,6 +32,7 @@
 #include "slowlog.h"
 #include "bio.h"
 #include "latency.h"
+#include "timeTrace.h"
 
 #include <time.h>
 #include <signal.h>
@@ -1457,6 +1458,9 @@ void initServerConfig(void) {
     server.hz = CONFIG_DEFAULT_HZ;
     server.runid[CONFIG_RUN_ID_SIZE] = '\0';
     server.arch_bits = (sizeof(long) == 8) ? 64 : 32;
+    server.currentOpNum = 0;
+    server.last_client_connected_usec = 0;
+    server.last_client_connected_opNum = 0;
     server.port = CONFIG_DEFAULT_SERVER_PORT;
     server.tcp_backlog = CONFIG_DEFAULT_TCP_BACKLOG;
     server.bindaddr_count = 0;
@@ -2249,7 +2253,15 @@ void call(client *c, int flags) {
     /* Call the command. */
     dirty = server.dirty;
     start = ustime();
+
+    record("RIFL check completed", 0, 0, 0, 0);
+
+    if (c->cmd->flags & CMD_WRITE) {
+        ++server.currentOpNum;
+    }
     c->cmd->proc(c);
+    record("Executed command", 0, 0, 0, 0);
+
     duration = ustime()-start;
     dirty = server.dirty-dirty;
     if (dirty < 0) dirty = 0;
@@ -2340,6 +2352,7 @@ void call(client *c, int flags) {
         redisOpArrayFree(&server.also_propagate);
     }
     server.stat_numcommands++;
+    record("End of call()", 0, 0, 0, 0);
 }
 
 /* If this function gets called we already read a whole
@@ -2619,6 +2632,8 @@ int prepareForShutdown(int flags) {
     closeListeningSockets(1);
     serverLog(LL_WARNING,"%s is now ready to exit, bye bye...",
         server.sentinel_mode ? "Sentinel" : "Redis");
+
+    printTrace("/shome/resultRedis/redis-original.tt");
     return C_OK;
 }
 

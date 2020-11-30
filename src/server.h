@@ -721,6 +721,10 @@ struct redisServer {
     int cronloops;              /* Number of times the cron function run */
     char runid[CONFIG_RUN_ID_SIZE+1];  /* ID always different at every exec. */
     int sentinel_mode;          /* True if this instance is a Sentinel. */
+    /* For throughput benchmark */
+    unsigned long long last_client_connected_usec;
+    long long last_client_connected_opNum;
+    long long currentOpNum;     /* Operation number that we are working on. */
     /* Networking */
     int port;                   /* TCP listening port */
     int tcp_backlog;            /* TCP listen() backlog */

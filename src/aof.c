@@ -30,6 +30,7 @@
 #include "server.h"
 #include "bio.h"
 #include "rio.h"
+#include "timeTrace.h"
 
 #include <signal.h>
 #include <fcntl.h>
@@ -435,6 +436,7 @@ void flushAppendOnlyFile(int force) {
         /* aof_fsync is defined as fdatasync() for Linux in order to avoid
          * flushing metadata. */
         latencyStartMonitor(latency);
+        record("forced-fsync is starting.", 0, 0, 0, 0);
         aof_fsync(server.aof_fd); /* Let's try to get this data on the disk */
         latencyEndMonitor(latency);
         latencyAddSampleIfNeeded("aof-fsync-always",latency);
@@ -442,6 +444,7 @@ void flushAppendOnlyFile(int force) {
     } else if ((server.aof_fsync == AOF_FSYNC_EVERYSEC &&
                 server.unixtime > server.aof_last_fsync)) {
         if (!sync_in_progress) aof_background_fsync(server.aof_fd);
+        record("background-fsync is scheduled.", 0, 0, 0, 0);
         server.aof_last_fsync = server.unixtime;
     }
 }

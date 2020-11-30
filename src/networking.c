@@ -28,7 +28,9 @@
  */
 
 #include "server.h"
+#include "timeTrace.h"
 #include <sys/uio.h>
+#include <sys/time.h>
 #include <math.h>
 
 static void setProtocolError(client *c, int pos);
@@ -681,6 +683,19 @@ static void acceptCommonHandler(int fd, int flags, char *ip) {
 
     server.stat_numconnections++;
     c->flags |= flags;
+
+    // For throughput benchmark, print the throughput from last new connection.
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+    unsigned long long currentTime = 1000000 * tv.tv_sec + tv.tv_usec;
+    serverLog(LL_NOTICE, "PerfStat (clientNum, throughput (kops/sec), timestamp): "
+                        "%4lu %7.2f %12llu",
+                    listLength(server.clients) - 1,
+                    (double)(server.currentOpNum - server.last_client_connected_opNum)
+                    * 1e3 / (currentTime - server.last_client_connected_usec),
+                    currentTime);
+    server.last_client_connected_usec = currentTime;
+    server.last_client_connected_opNum = server.currentOpNum;
 }
 
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
@@ -981,6 +996,7 @@ int writeToClient(int fd, client *c, int handler_installed) {
             return C_ERR;
         }
     }
+    record("Replied to client", 0, 0, 0, 0);
     return C_OK;
 }
 
@@ -1312,6 +1328,8 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     size_t qblen;
     UNUSED(el);
     UNUSED(mask);
+
+    record("file event detected.", 0, 0, 0, 0);
 
     readlen = PROTO_IOBUF_LEN;
     /* If this is a multi bulk request, and we are processing a bulk reply

@@ -28,6 +28,7 @@
  */
 
 #include "server.h"
+#include "timeTrace.h"
 #include <math.h> /* isnan(), isinf() */
 
 /*-----------------------------------------------------------------------------
@@ -89,7 +90,11 @@ void setGenericCommand(client *c, int flags, robj *key, robj *val, robj *expire,
     notifyKeyspaceEvent(NOTIFY_STRING,"set",key,c->db->id);
     if (expire) notifyKeyspaceEvent(NOTIFY_GENERIC,
         "expire",key,c->db->id);
+
+    record("executed SET command", 0, 0, 0, 0);
+
     addReply(c, ok_reply ? ok_reply : shared.ok);
+    record("added reply string", 0, 0, 0, 0);
 }
 
 /* SET key value [NX] [XX] [EX <seconds>] [PX <milliseconds>] */
