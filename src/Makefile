@@ -91,6 +91,7 @@ endif
 endif
 # Include paths to dependencies
 FINAL_CFLAGS+= -I../deps/hiredis -I../deps/linenoise -I../deps/lua/src
+#FINAL_CFLAGS+= -I../deps/hiredis -I../deps/linenoise -I../deps/lua/src -fxray-instrument
 
 ifeq ($(MALLOC),tcmalloc)
 	FINAL_CFLAGS+= -DUSE_TCMALLOC
@@ -104,7 +105,7 @@ endif
 
 ifeq ($(MALLOC),jemalloc)
 	DEPENDENCY_TARGETS+= jemalloc
-	FINAL_CFLAGS+= -DUSE_JEMALLOC -I../deps/jemalloc/include
+	FINAL_CFLAGS+= -DUSE_JEMALLOC -I../deps/jemalloc/include 
 	FINAL_LIBS+= ../deps/jemalloc/lib/libjemalloc.a
 endif
 
