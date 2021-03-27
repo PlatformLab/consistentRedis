@@ -56,6 +56,19 @@
 #include <locale.h>
 #include <sys/socket.h>
 
+#include <stdio.h>
+// #include <thread>
+#include "xray_log_interface.h"
+#include "nanolog.h"
+// Refer to https://github.com/llvm-mirror/compiler-rt/blob/master/include/xray/xray_log_interface.h
+
+int target(int) __attribute__((xray_always_instrument));
+
+#define XRAY_MODE "nanolog"
+
+// thread_local int req_id;
+
+
 /* Our shared "common" objects */
 
 struct sharedObjectsStruct shared;
@@ -3958,7 +3971,38 @@ int redisIsSupervised(int mode) {
 int main(int argc, char **argv) {
     struct timeval tv;
     int j;
+	
+	// Xray-nanolog patching
+	// Register our own logging mode as "nanolog".
+	auto register_status = __xray_log_register_mode(XRAY_MODE, nanolog_impl);
+	if (register_status != XRayLogRegisterStatus::XRAY_REGISTRATION_OK) {
+		printf("Error registering XRay mode\n");
+		return 1;
+	}
 
+	// Select a logging mode. xray-fdr and xray-basic are preinstalled,
+	// otherwise we need to register our own implementation (already
+	// done so in the previous function invocation).
+	auto select_status = __xray_log_select_mode(XRAY_MODE);
+	if (select_status != XRayLogRegisterStatus::XRAY_REGISTRATION_OK) {
+		printf("Error selecting XRay mode\n");
+		return 1;
+	}
+	// Initialize the logging mode with desired parameters.
+	auto config_status = __xray_log_init_mode(XRAY_MODE, "");
+	if (config_status != XRayLogInitStatus::XRAY_LOG_INITIALIZED) {
+		printf("Error initializing XRay mode\n");
+		return 1;
+	}
+	// Patch the functions (replace nop-sleds with actual logging code).
+	auto patch_status = __xray_patch();
+	if (patch_status != XRayPatchingStatus::SUCCESS) {
+		printf("Error patching the binary\n");
+		return 1;
+	}
+	
+	
+	
 #ifdef REDIS_TEST
     if (argc == 3 && !strcasecmp(argv[1], "test")) {
         if (!strcasecmp(argv[2], "ziplist")) {
